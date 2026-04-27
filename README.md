@@ -428,31 +428,6 @@ sudo nginx -t
 sudo systemctl reload nginx
 ```
 
-## Git 提交与推送
-
-查看当前状态：
-
-```bash
-git status
-```
-
-提交修改：
-
-```bash
-git add .
-git commit -m "Update README"
-git push
-```
-
-本项目已通过 `.gitignore` 忽略以下内容：
-
-- `node_modules/`
-- `dist/`
-- `.env`
-- SQLite 本地数据库文件
-- 压缩包文件
-- 日志文件
-
 ## 常见问题
 
 ### 前端提示跨域错误
