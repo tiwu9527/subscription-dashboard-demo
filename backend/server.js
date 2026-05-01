@@ -115,9 +115,20 @@ app.use((error, req, res, next) => {
   res.status(500).json({ message: '服务器内部错误，请稍后重试' });
 });
 
-process.on('SIGINT', async () => {
-  await prisma.$disconnect();
-  process.exit(0);
+async function shutdown() {
+  try {
+    await prisma.$disconnect();
+  } finally {
+    process.exit(0);
+  }
+}
+
+process.on('SIGINT', () => {
+  void shutdown();
+});
+
+process.on('SIGTERM', () => {
+  void shutdown();
 });
 
 app.listen(port, '0.0.0.0', () => {

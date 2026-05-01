@@ -36,6 +36,8 @@
 |   |-- prisma
 |   |   |-- migrations
 |   |   `-- schema.prisma
+|   |-- Dockerfile
+|   |-- docker-entrypoint.sh
 |   |-- .env.example
 |   |-- package.json
 |   `-- server.js
@@ -50,7 +52,11 @@
 |   |-- package.json
 |   |-- postcss.config.js
 |   |-- tailwind.config.js
+|   |-- Dockerfile
+|   |-- nginx.conf
 |   `-- vite.config.js
+|-- .env.example
+|-- docker-compose.yml
 |-- .gitignore
 `-- README.md
 ```
@@ -169,6 +175,100 @@ GET    /api/subscriptions
 POST   /api/subscriptions
 DELETE /api/subscriptions/:id
 GET    /api/subscriptions/summary
+```
+
+## Docker 部署
+
+Docker 部署会启动两个服务：
+
+- `api`: Node.js + Express + Prisma，启动时自动执行 `prisma migrate deploy`。
+- `web`: Nginx 静态托管前端构建产物，并把 `/api` 和 `/health` 反向代理到 `api`。
+
+SQLite 数据库文件默认保存在 Docker volume `backend-data` 中，重启或重新构建镜像不会丢失数据。
+
+### 1. 准备环境
+
+服务器或本机需要安装 Docker 和 Docker Compose v2：
+
+```bash
+docker --version
+docker compose version
+```
+
+### 2. 启动服务
+
+在项目根目录执行：
+
+```bash
+docker compose up -d --build
+```
+
+默认访问地址：
+
+```text
+http://localhost:9527
+```
+
+健康检查：
+
+```bash
+curl http://localhost:9527/health
+```
+
+### 3. 修改部署配置
+
+如需修改宿主机访问端口或前端来源，可以复制根目录环境变量示例：
+
+```bash
+cp .env.example .env
+```
+
+编辑 `.env`：
+
+```env
+WEB_PORT=9527
+FRONTEND_ORIGIN=http://localhost:9527
+DATABASE_URL=file:/app/data/prod.db
+```
+
+服务器上如果直接使用 80 端口和域名，可以设置为：
+
+```env
+WEB_PORT=80
+FRONTEND_ORIGIN=http://example.com
+DATABASE_URL=file:/app/data/prod.db
+```
+
+修改后重新启动：
+
+```bash
+docker compose up -d --build
+```
+
+### 4. 运维命令
+
+查看服务状态：
+
+```bash
+docker compose ps
+```
+
+查看日志：
+
+```bash
+docker compose logs -f
+```
+
+停止服务但保留数据：
+
+```bash
+docker compose down
+```
+
+停止服务并删除 SQLite 数据卷：
+
+```bash
+docker compose down -v
 ```
 
 ## 服务器部署指南
