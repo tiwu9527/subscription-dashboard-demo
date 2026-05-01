@@ -63,10 +63,11 @@
 
 ## 环境要求
 
+本地开发：
+
 - Node.js 18 或更高版本
 - npm
 - Git
-- Linux 服务器部署时建议使用普通用户运行应用，不建议直接使用 root 用户运行 Node 服务
 
 检查版本：
 
@@ -75,6 +76,12 @@ node -v
 npm -v
 git --version
 ```
+
+Docker 部署：
+
+- Docker
+- Docker Compose v2
+- Git
 
 ## 本地开发运行
 
@@ -177,27 +184,65 @@ DELETE /api/subscriptions/:id
 GET    /api/subscriptions/summary
 ```
 
-## Docker 部署
+## 部署方案
 
-Docker 部署会启动两个服务：
+生产部署推荐使用 Docker Compose。Compose 会启动两个容器：
 
-- `api`: Node.js + Express + Prisma，启动时自动执行 `prisma migrate deploy`。
-- `web`: Nginx 静态托管前端构建产物，并把 `/api` 和 `/health` 反向代理到 `api`。
+- `api`: Node.js + Express + Prisma，容器启动时自动执行 `prisma migrate deploy`。
+- `web`: Nginx 托管前端静态文件，并把 `/api` 和 `/health` 反向代理到 `api`。
 
-SQLite 数据库文件默认保存在 Docker volume `backend-data` 中，重启或重新构建镜像不会丢失数据。
+SQLite 数据库文件默认保存在 Docker volume `backend-data` 中。重新构建镜像或重启容器不会删除数据，只有执行 `docker compose down -v` 才会删除该数据卷。
 
-### 1. 准备环境
+### 1. 准备服务器
 
-服务器或本机需要安装 Docker 和 Docker Compose v2：
+服务器需要安装 Git、Docker 和 Docker Compose v2：
 
 ```bash
+git --version
 docker --version
 docker compose version
 ```
 
-### 2. 启动服务
+拉取源码：
 
-在项目根目录执行：
+```bash
+git clone https://github.com/tiwu9527/subscription-dashboard-demo.git
+cd subscription-dashboard-demo
+```
+
+### 2. 配置部署变量
+
+复制根目录示例配置：
+
+```bash
+cp .env.example .env
+```
+
+默认配置如下：
+
+```env
+WEB_PORT=9527
+FRONTEND_ORIGIN=http://localhost:9527
+DATABASE_URL=file:/app/data/prod.db
+```
+
+如果直接通过服务器 IP 访问，把 `FRONTEND_ORIGIN` 改成实际访问地址：
+
+```env
+WEB_PORT=9527
+FRONTEND_ORIGIN=http://your_server_ip:9527
+DATABASE_URL=file:/app/data/prod.db
+```
+
+如果使用域名和 HTTPS，并由服务器上的 Nginx/Caddy 反向代理到 Docker 服务：
+
+```env
+WEB_PORT=9527
+FRONTEND_ORIGIN=https://example.com
+DATABASE_URL=file:/app/data/prod.db
+```
+
+### 3. 启动服务
 
 ```bash
 docker compose up -d --build
@@ -215,51 +260,72 @@ http://localhost:9527
 curl http://localhost:9527/health
 ```
 
-### 3. 修改部署配置
-
-如需修改宿主机访问端口或前端来源，可以复制根目录环境变量示例：
-
-```bash
-cp .env.example .env
-```
-
-编辑 `.env`：
-
-```env
-WEB_PORT=9527
-FRONTEND_ORIGIN=http://localhost:9527
-DATABASE_URL=file:/app/data/prod.db
-```
-
-服务器上如果直接使用 80 端口和域名，可以设置为：
-
-```env
-WEB_PORT=80
-FRONTEND_ORIGIN=http://example.com
-DATABASE_URL=file:/app/data/prod.db
-```
-
-修改后重新启动：
-
-```bash
-docker compose up -d --build
-```
-
-### 4. 运维命令
-
-查看服务状态：
+查看容器状态和日志：
 
 ```bash
 docker compose ps
-```
-
-查看日志：
-
-```bash
 docker compose logs -f
 ```
 
-停止服务但保留数据：
+### 4. 域名反向代理
+
+如果服务器已有 Nginx，可以让 Docker 服务继续监听本机 `9527` 端口，再由宿主机 Nginx 负责 HTTPS 和域名入口。
+
+示例 Nginx 配置：
+
+```nginx
+server {
+    listen 80;
+    server_name example.com;
+
+    location / {
+        proxy_pass http://127.0.0.1:9527;
+        proxy_http_version 1.1;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+    }
+}
+```
+
+启用 HTTPS 后，`.env` 中的 `FRONTEND_ORIGIN` 应改为 `https://example.com`，然后重启容器：
+
+```bash
+docker compose up -d
+```
+
+### 5. 更新发布
+
+服务器上拉取最新代码并重新构建：
+
+```bash
+git pull
+docker compose up -d --build
+```
+
+`api` 容器启动时会自动执行数据库迁移，不需要手动运行 Prisma 命令。
+
+### 6. 数据备份与恢复
+
+备份 SQLite 数据库：
+
+```bash
+docker compose cp api:/app/data/prod.db ./prod.db.bak
+```
+
+恢复数据库时先停止服务，再创建后端容器并复制备份文件：
+
+```bash
+docker compose down
+docker compose create api
+docker compose cp ./prod.db.bak api:/app/data/prod.db
+docker compose up -d
+```
+
+### 7. 停止服务
+
+停止服务并保留数据：
 
 ```bash
 docker compose down
@@ -271,332 +337,93 @@ docker compose down
 docker compose down -v
 ```
 
-## 服务器部署指南
+## 可选：手动部署
 
-下面以 Linux 服务器为例，假设项目部署到 `/opt/subscription-dashboard-demo`，域名为 `example.com`。请把示例域名替换成你自己的域名或服务器 IP。
+如果不能使用 Docker，可以手动部署：
 
-### 1. 登录服务器
+1. 后端进入 `backend`，执行 `npm ci`、`npm run prisma:generate`、`npx prisma migrate deploy`，再用 PM2 或 systemd 运行 `npm start`。
+2. 前端进入 `frontend`，设置 `VITE_API_BASE_URL="/api"` 后执行 `npm ci` 和 `npm run build`。
+3. 使用宿主机 Nginx 托管 `frontend/dist`，并把 `/api` 和 `/health` 代理到后端 `127.0.0.1:3001`。
 
-```bash
-ssh your_user@your_server_ip
-```
-
-### 2. 安装基础环境
-
-确保服务器已经安装 Git、Node.js 18+ 和 npm。
-
-```bash
-git --version
-node -v
-npm -v
-```
-
-如果版本不存在或 Node.js 版本低于 18，请先安装或升级 Node.js。
-
-### 3. 克隆源码至服务器
-
-```bash
-cd /opt
-git clone https://github.com/tiwu9527/subscription-dashboard-demo.git
-cd subscription-dashboard-demo
-```
-
-如果 `/opt` 没有写入权限，可以先创建目录并授权：
-
-```bash
-sudo mkdir -p /opt/subscription-dashboard-demo
-sudo chown -R $USER:$USER /opt/subscription-dashboard-demo
-git clone https://github.com/tiwu9527/subscription-dashboard-demo.git /opt/subscription-dashboard-demo
-cd /opt/subscription-dashboard-demo
-```
-
-### 4. 配置后端生产环境
-
-```bash
-cd /opt/subscription-dashboard-demo/backend
-cp .env.example .env
-```
-
-编辑 `backend/.env`：
-
-```env
-DATABASE_URL="file:./prod.db"
-PORT=3001
-FRONTEND_ORIGIN="https://example.com"
-```
-
-如果暂时没有域名，使用服务器 IP 和前端访问端口：
-
-```env
-FRONTEND_ORIGIN="http://your_server_ip:4173"
-```
-
-安装依赖并初始化数据库：
-
-```bash
-npm ci
-npm run prisma:generate
-npx prisma migrate deploy
-```
-
-说明：
-
-- 本地开发可以使用 `npm run prisma:migrate`。
-- 服务器生产环境建议使用 `npx prisma migrate deploy`，它会执行已经提交到仓库的迁移文件。
-
-### 5. 启动后端服务
-
-临时启动：
-
-```bash
-npm start
-```
-
-推荐使用 PM2 常驻运行：
-
-```bash
-npm install -g pm2
-pm2 start server.js --name subscription-dashboard-api
-pm2 save
-pm2 startup
-```
-
-如果全局安装 PM2 没有权限，可以使用 `sudo npm install -g pm2`。`pm2 startup` 执行后通常会输出一条带 `sudo` 的命令，请按终端提示复制执行，用于配置开机自启。
-
-检查后端状态：
-
-```bash
-pm2 status
-curl http://127.0.0.1:3001/health
-```
-
-查看日志：
-
-```bash
-pm2 logs subscription-dashboard-api
-```
-
-### 6. 构建前端
-
-进入前端目录：
-
-```bash
-cd /opt/subscription-dashboard-demo/frontend
-cp .env.example .env
-```
-
-如果前端通过域名访问，并且 Nginx 会把 `/api` 反向代理到后端，可以配置：
-
-```env
-VITE_API_BASE_URL="/api"
-```
-
-如果直接通过服务器 IP 访问后端端口，可以配置：
-
-```env
-VITE_API_BASE_URL="http://your_server_ip:3001/api"
-```
-
-安装依赖并构建：
-
-```bash
-npm ci
-npm run build
-```
-
-构建产物会生成到：
-
-```text
-frontend/dist
-```
-
-### 7. 前端运行方式一：Vite Preview
-
-适合临时演示或内网测试：
-
-```bash
-npm run preview
-```
-
-默认访问地址：
-
-```text
-http://your_server_ip:4173
-```
-
-如果使用这种方式，请确保 `backend/.env` 里的 `FRONTEND_ORIGIN` 是：
-
-```env
-FRONTEND_ORIGIN="http://your_server_ip:4173"
-```
-
-### 8. 前端运行方式二：Nginx 静态托管
-
-生产环境更推荐用 Nginx 托管 `frontend/dist`，并把 API 请求反向代理到后端。
-
-示例 Nginx 配置：
-
-```nginx
-server {
-    listen 80;
-    server_name example.com;
-
-    root /opt/subscription-dashboard-demo/frontend/dist;
-    index index.html;
-
-    location / {
-        try_files $uri $uri/ /index.html;
-    }
-
-    location /api/ {
-        proxy_pass http://127.0.0.1:3001/api/;
-        proxy_http_version 1.1;
-        proxy_set_header Host $host;
-        proxy_set_header X-Real-IP $remote_addr;
-        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
-        proxy_set_header X-Forwarded-Proto $scheme;
-    }
-
-    location /health {
-        proxy_pass http://127.0.0.1:3001/health;
-        proxy_http_version 1.1;
-        proxy_set_header Host $host;
-        proxy_set_header X-Real-IP $remote_addr;
-        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
-        proxy_set_header X-Forwarded-Proto $scheme;
-    }
-}
-```
-
-测试并重载 Nginx：
-
-```bash
-sudo nginx -t
-sudo systemctl reload nginx
-```
-
-使用 Nginx 和域名时，建议配置：
-
-```env
-# backend/.env
-FRONTEND_ORIGIN="https://example.com"
-```
-
-```env
-# frontend/.env
-VITE_API_BASE_URL="/api"
-```
-
-修改前端环境变量后，需要重新执行：
-
-```bash
-cd /opt/subscription-dashboard-demo/frontend
-npm run build
-```
-
-## 更新服务器代码
-
-服务器上更新到 GitHub 最新代码：
-
-```bash
-cd /opt/subscription-dashboard-demo
-git pull
-```
-
-更新后端：
-
-```bash
-cd backend
-npm ci
-npm run prisma:generate
-npx prisma migrate deploy
-pm2 restart subscription-dashboard-api
-```
-
-更新前端：
-
-```bash
-cd ../frontend
-npm ci
-npm run build
-```
-
-如果使用 Nginx 静态托管，通常构建完成即可生效；如修改了 Nginx 配置，再执行：
-
-```bash
-sudo nginx -t
-sudo systemctl reload nginx
-```
+手动部署时需要自行维护进程守护、静态资源托管、反向代理、日志轮转和数据库备份。除非服务器无法安装 Docker，否则建议使用上面的 Docker Compose 方案。
 
 ## 常见问题
 
-### 前端提示跨域错误
+### 访问端口被占用
 
-检查 `backend/.env`：
+修改根目录 `.env` 的 `WEB_PORT`，例如：
 
 ```env
-FRONTEND_ORIGIN="http://localhost:5173"
+WEB_PORT=8081
+FRONTEND_ORIGIN=http://your_server_ip:8081
 ```
 
-这个地址必须和浏览器访问前端时的协议、域名/IP、端口完全一致。
+修改后执行：
+
+```bash
+docker compose up -d
+```
 
 ### 前端请求 API 失败
 
-检查 `frontend/.env`：
-
-```env
-VITE_API_BASE_URL="http://localhost:3001/api"
-```
-
-如果是在服务器上使用域名和 Nginx，通常应设置为：
-
-```env
-VITE_API_BASE_URL="/api"
-```
-
-修改 `frontend/.env` 后必须重新构建前端：
+Docker 部署下前端默认请求同域 `/api`，不需要单独暴露后端 `3001` 端口。先检查健康接口：
 
 ```bash
-npm run build
+curl http://localhost:9527/health
+```
+
+如果健康检查失败，查看后端日志：
+
+```bash
+docker compose logs api
+```
+
+### 前端提示跨域错误
+
+检查根目录 `.env` 中的 `FRONTEND_ORIGIN`。它必须和浏览器实际访问地址的协议、域名/IP、端口完全一致。
+
+示例：
+
+```env
+FRONTEND_ORIGIN=https://example.com
+```
+
+修改后重启服务：
+
+```bash
+docker compose up -d
 ```
 
 ### Prisma 提示数据库或表不存在
 
-在后端目录执行：
+Docker 部署下 `api` 启动时会自动执行迁移。可以查看迁移日志：
 
 ```bash
-npm run prisma:generate
-npx prisma migrate deploy
+docker compose logs api
 ```
 
-本地开发也可以执行：
+如果需要手动执行迁移：
 
 ```bash
-npm run prisma:migrate
+docker compose exec api npm run prisma:deploy
 ```
-
-### 端口被占用
-
-检查端口占用：
-
-```bash
-lsof -i :3001
-```
-
-可以修改 `backend/.env` 里的 `PORT`，但同时要调整前端的 `VITE_API_BASE_URL` 或 Nginx 反向代理配置。
 
 ### 查看服务日志
 
-如果使用 PM2：
+查看全部日志：
 
 ```bash
-pm2 logs subscription-dashboard-api
+docker compose logs -f
 ```
 
-如果直接运行：
+只看后端日志：
 
 ```bash
-npm start
+docker compose logs -f api
 ```
 
-后端日志会直接输出在当前终端。
+只看前端 Nginx 日志：
+
+```bash
+docker compose logs -f web
+```
