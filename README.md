@@ -67,6 +67,48 @@
 - Docker Compose v2
 - Git
 
+## 环境安装步骤
+
+以下以 Ubuntu/Debian 服务器为例。
+
+### 1. 安装 Git
+
+```bash
+sudo apt update
+sudo apt install -y git
+```
+
+### 2. 安装 Docker 和 Docker Compose v2
+
+```bash
+sudo apt update
+sudo apt install -y ca-certificates curl gnupg
+sudo install -m 0755 -d /etc/apt/keyrings
+. /etc/os-release
+curl -fsSL "https://download.docker.com/linux/${ID}/gpg" | sudo gpg --dearmor -o /etc/apt/keyrings/docker.gpg
+sudo chmod a+r /etc/apt/keyrings/docker.gpg
+echo "deb [arch=$(dpkg --print-architecture) signed-by=/etc/apt/keyrings/docker.gpg] https://download.docker.com/linux/${ID} ${VERSION_CODENAME} stable" | sudo tee /etc/apt/sources.list.d/docker.list > /dev/null
+sudo apt update
+sudo apt install -y docker-ce docker-ce-cli containerd.io docker-buildx-plugin docker-compose-plugin
+```
+
+如果不想每次执行 Docker 命令都输入 `sudo`，可以把当前用户加入 `docker` 用户组：
+
+```bash
+sudo usermod -aG docker $USER
+newgrp docker
+```
+
+### 3. 验证环境
+
+```bash
+git --version
+docker --version
+docker compose version
+```
+
+Windows 或 macOS 可以安装 Docker Desktop，安装完成后同样执行上面的验证命令确认 Docker Compose v2 可用。
+
 ## API 接口
 
 Docker 部署后，后端接口通过 Web 服务同域访问。默认访问地址为 `http://localhost:9527`。
