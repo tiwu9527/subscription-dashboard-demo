@@ -8,7 +8,7 @@
 - 支持月付和年付两种计费周期
 - 自动统计预估月度支出和年度支出
 - 后端提供 REST API 和健康检查接口
-- 前端通过环境变量配置 API 地址，便于本地开发和服务器部署
+- 前端默认通过同域 `/api` 访问后端，便于 Docker 反向代理部署
 
 ## 技术栈
 
@@ -63,118 +63,13 @@
 
 ## 环境要求
 
-本地开发：
-
-- Node.js 18 或更高版本
-- npm
-- Git
-
-检查版本：
-
-```bash
-node -v
-npm -v
-git --version
-```
-
-Docker 部署：
-
 - Docker
 - Docker Compose v2
 - Git
 
-## 本地开发运行
-
-### 1. 克隆源码
-
-```bash
-git clone https://github.com/tiwu9527/subscription-dashboard-demo.git
-cd subscription-dashboard-demo
-```
-
-如果你已经在本机有源码目录，可以直接进入项目根目录。
-
-### 2. 配置并启动后端
-
-```bash
-cd backend
-cp .env.example .env
-npm ci
-npm run prisma:generate
-npm run prisma:migrate
-npm run dev
-```
-
-Windows PowerShell 复制环境变量文件时可以使用：
-
-```powershell
-Copy-Item .env.example .env
-```
-
-后端默认地址：
-
-```text
-http://localhost:3001
-```
-
-健康检查：
-
-```bash
-curl http://localhost:3001/health
-```
-
-### 3. 配置并启动前端
-
-新开一个终端：
-
-```bash
-cd frontend
-cp .env.example .env
-npm ci
-npm run dev
-```
-
-Windows PowerShell 复制环境变量文件时可以使用：
-
-```powershell
-Copy-Item .env.example .env
-```
-
-前端默认地址：
-
-```text
-http://localhost:5173
-```
-
-## 环境变量说明
-
-后端环境变量文件：`backend/.env`
-
-```env
-DATABASE_URL="file:./dev.db"
-PORT=3001
-FRONTEND_ORIGIN="http://localhost:5173"
-```
-
-字段说明：
-
-- `DATABASE_URL`: SQLite 数据库文件地址。`file:./dev.db` 表示数据库文件位于 `backend/prisma/dev.db`。
-- `PORT`: 后端 API 服务端口。
-- `FRONTEND_ORIGIN`: 允许跨域访问后端的前端地址。必须和浏览器里打开的前端地址一致。
-
-前端环境变量文件：`frontend/.env`
-
-```env
-VITE_API_BASE_URL="http://localhost:3001/api"
-```
-
-字段说明：
-
-- `VITE_API_BASE_URL`: 前端请求后端 API 的基础地址。
-
 ## API 接口
 
-后端接口默认运行在 `http://localhost:3001`。
+Docker 部署后，后端接口通过 Web 服务同域访问。默认访问地址为 `http://localhost:9527`。
 
 ```text
 GET    /health
@@ -336,16 +231,6 @@ docker compose down
 ```bash
 docker compose down -v
 ```
-
-## 可选：手动部署
-
-如果不能使用 Docker，可以手动部署：
-
-1. 后端进入 `backend`，执行 `npm ci`、`npm run prisma:generate`、`npx prisma migrate deploy`，再用 PM2 或 systemd 运行 `npm start`。
-2. 前端进入 `frontend`，设置 `VITE_API_BASE_URL="/api"` 后执行 `npm ci` 和 `npm run build`。
-3. 使用宿主机 Nginx 托管 `frontend/dist`，并把 `/api` 和 `/health` 代理到后端 `127.0.0.1:3001`。
-
-手动部署时需要自行维护进程守护、静态资源托管、反向代理、日志轮转和数据库备份。除非服务器无法安装 Docker，否则建议使用上面的 Docker Compose 方案。
 
 ## 常见问题
 
